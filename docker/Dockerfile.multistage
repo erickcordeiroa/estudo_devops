@@ -1,0 +1,35 @@
+# Dockerfile multi-stage simples para Node.js
+# Build: docker build -f docker/Dockerfile.multistage -t my-node-app .
+# Run:   docker run --rm -p 3000:3000 my-node-app
+
+ARG NODE_VERSION=20-alpine
+
+# Etapa 1: Builder (instala deps e gera artefatos de build)
+FROM node:${NODE_VERSION} AS builder
+WORKDIR /app
+
+# Instala dependências com cache eficiente
+COPY package*.json ./
+RUN npm ci
+
+# Copia o restante do código e roda build (se existir)
+COPY . .
+RUN npm run build || echo "Sem etapa de build (ok)"
+
+# Etapa 2: Produção (somente o necessário, sem devDependencies)
+FROM node:${NODE_VERSION} AS production
+ENV NODE_ENV=production
+WORKDIR /app
+
+# Instala apenas dependências de produção
+COPY --from=builder /app/package*.json ./
+RUN npm ci --omit=dev
+
+# Copia artefatos e fontes necessários
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/.env* ./
+
+EXPOSE 3000
+
+# Executa diretamente a build de produção
+CMD ["node", "dist/index.js"]
